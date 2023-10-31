@@ -31,8 +31,6 @@ def evaluate(data_file_path,unseen_comp_file_path, k):
   
     img_id_list = []
     caption_list = []
-    # 获取所有图像id
-    # image_ids = coco.getImgIds()
     #读取image_id对应的图像以及其caption，直接将caption作为CLIP_text的输入
     with open(unseen_comp_file_path, "r") as file:
           # 跳过第一行
@@ -85,7 +83,7 @@ def evaluate(data_file_path,unseen_comp_file_path, k):
 
 
 if __name__ == '__main__':
-    # 加载MS COCO数据集和注释
+    # 加载MS COCO图像以及unseen_comp的{img_id,caption}
     data_file_path = '/content/train2017'
     # unseen_comp_file_path = "/content/gdrive/MyDrive/data_split/unseen_comp.txt"
     unseen_comp_file_path = "/content/test.txt"
