@@ -1,10 +1,11 @@
 import torch
 import clip
 import numpy as np
-from pycocotools.coco import COCO
 from PIL import Image
 from tqdm import *
 import os
+from utils import set_seed, setup_logger, load_config_file
+from data import sen_parse
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 model, preprocess = clip.load("ViT-B/32", device=device)
@@ -31,7 +32,8 @@ def evaluate(data_file_path,unseen_comp_file_path, k):
   
     img_id_list = []
     caption_list = []
-    #读取image_id对应的图像以及其caption，直接将caption作为CLIP_text的输入
+    obj_list =[]
+    #读取image_id对应的图像以及其caption
     with open(unseen_comp_file_path, "r") as file:
           # 跳过第一行
         next(file)
@@ -47,6 +49,8 @@ def evaluate(data_file_path,unseen_comp_file_path, k):
 
             img_id_list.append(int(image_id))
             caption_list.append(caption)
+            obj,_,_= sen_parse(caption=caption)
+            obj_list.append(obj)
             # caption2imgid = {str(caption):img_id for img_id ,caption in zip(img_id_list,caption_list)}
             # imgid2caption = {img_id:caption for img_id ,caption in zip(img_id_list,caption_list)}
 
@@ -54,13 +58,13 @@ def evaluate(data_file_path,unseen_comp_file_path, k):
     total = len(img_id_list)
     correct = 0
     image_features_list = []
-    text_all = torch.cat([clip.tokenize(f"{c}" for c in caption_list)]).to(device)
+    text_all = torch.cat([clip.tokenize(f"{c}" for c in caption_list)]).to(device)#，直接将caption作为CLIP_text的输入
+    # text_all = torch.cat([clip.tokenize(f"{c}" for c in obj_list)]).to(device)#将每张图像中所有的object作为CLIP_text的输入
     with torch.no_grad():
-        text_features = model.encode_text(text_all)
+        text_features = model.encode_text(text_all).to("cpu")
     
     # 对于每个图像...
     for image_id in tqdm(img_id_list):
-        
         # 获取图像的文件路径和标注
         filename = "000000" + str(image_id).zfill(6) + ".jpg"
         image_path = os.path.join(data_file_path,filename)
@@ -69,7 +73,6 @@ def evaluate(data_file_path,unseen_comp_file_path, k):
         image_features_list.append(image_features)
 
     image_features = torch.cat(image_features_list)
-    print(image_features.size())
 
     similarities = get_similarities(text_features, image_features)
     for i in range(len(img_id_list)):
@@ -83,11 +86,15 @@ def evaluate(data_file_path,unseen_comp_file_path, k):
 
 
 if __name__ == '__main__':
-    # 加载MS COCO图像以及unseen_comp的{img_id,caption}
-    data_file_path = '/content/train2017'
-    # unseen_comp_file_path = "/content/gdrive/MyDrive/data_split/unseen_comp.txt"
-    unseen_comp_file_path = "/content/test.txt"
-    k = 1
+    
+    DATA_CONFIG_PATH = 'data/data_config.yaml'
+    data_config = load_config_file(DATA_CONFIG_PATH)
+    # MS COCO图像   以及    unseen_comp{img_id,caption}的path
+    data_file_path = data_config.train_img_dir
+    unseen_comp_file_path = data_config.unseen_imgid_caption_dir
+    
+
+    k = 1#recall@k
     recall_at_5 = evaluate(data_file_path,unseen_comp_file_path, k)
     print("Recall@{}: {:.4f}".format(k,recall_at_5))
 

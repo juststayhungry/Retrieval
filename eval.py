@@ -1,9 +1,9 @@
 import torch
 import clip
 import numpy as np
-from pycocotools.coco import COCO
 from tqdm import *
 from data.datasets import CustomDataset
+from utils import set_seed, mkdir, setup_logger, load_config_file
 
 # 定义函数，返回和文本查询的相似性得分
 def i2t(images, captions, npts=None):
@@ -73,38 +73,41 @@ def t2i(images, captions, npts=None, data='f8k'):
     medr = np.floor(np.median(ranks)) + 1
     return (r1, r5, r10, medr)
 
-def evaluate(data_file_path,unseen_comp_file_path, k):
-  eval_dataset = CustomDataset(unseen_comp_file_path,data_file_path,preprocess)
-  total = len(eval_dataset)
+def evaluate(data_config):
+  # MS COCO图像   以及    unseen_comp{img_id,caption}的path
+  eval_dataset = CustomDataset(data_config)
   batch_size = 100
   eval_loader = torch.utils.data.DataLoader(eval_dataset,batch_size=batch_size,drop_last=True)#
   image_features_list = []
   text_features_list = []
   for i, batch in tqdm(enumerate(eval_loader)):
     image ,caption = batch #B D
+    image = image.to(device)
     text = torch.cat([clip.tokenize(f"{c}" for c in caption)]).to(device)
     with torch.no_grad():
       text_feature = model.encode_text(text)
-      image_feature = model.encode_image(image) #B K
+      image_feature = model.encode_image(image) 
     #先分批次读取后再对特征进行汇总
-    text_features_list.append(text_feature)
-    text_features = torch.cat(text_features_list, dim=0)
-    image_features_list.append(image_feature)
-    image_features = torch.cat(image_features_list, dim=0)
- 
-  # return t2i(images=image_features,captions=text_features)
-  return i2t(images=image_features,captions=text_features)
+    text_features_list.append(text_feature.to("cpu"))
+    image_features_list.append(image_feature.to("cpu"))
+
+  text_features = torch.cat(text_features_list, dim=0)
+  image_features = torch.cat(image_features_list, dim=0)
+  (r1, r5, r10, medr) = i2t(images=image_features,captions=text_features)
+  print("Image to text: recall@1 @5 @10: %.1f, %.1f, %.1f, %.1f" % (r1, r5, r10, medr))
+  (r1i, r5i, r10i, medri) = t2i(images=image_features,captions=text_features)
+  print("Text to image: recall@1 @5 @10: %.1f, %.1f, %.1f, %.1f" % (r1i, r5i, r10i, medri))
+  return 0
 
 
 if __name__ == '__main__':
-  # 加载MS COCO数据集和注释
+  
+  DATA_CONFIG_PATH = '/content/clip-training/dataloader/data_config.yaml'
+  data_config = load_config_file(DATA_CONFIG_PATH)
+  
   device = "cuda" if torch.cuda.is_available() else "cpu"
   model, preprocess = clip.load("ViT-B/32", device=device)
-  data_file_path = '/content/train2017'
-  # unseen_comp_file_path = "/content/gdrive/MyDrive/data_split/unseen_comp.txt"
-  unseen_comp_file_path = "/content/test.txt"
-  k = 1
-  recall = evaluate(data_file_path,unseen_comp_file_path, k)
-  print("r1, r5, r10, medr结果分别是",recall)
+  recall = evaluate(data_config)
+
     
         

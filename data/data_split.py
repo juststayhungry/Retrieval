@@ -4,7 +4,7 @@ import json
 import sng_parser
 import spacy
 from tqdm import *
-
+import random
 # 加载英文语言模型
 nlp = spacy.load('en_core_web_sm')
 def extract_adjectives(sentence):
@@ -37,6 +37,8 @@ def sen_parse(caption):
   return objects,attributes,relations
 
 def split_dataset(dataset, split_ratio):
+    # 设置随机种子为10
+    random.seed(10)
     random.shuffle(dataset)  # 随机打乱数据集顺序
     split_index = int(len(dataset) * split_ratio)
     train_data = dataset[:split_index]
