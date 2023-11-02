@@ -18,14 +18,24 @@ def encode_image(image):
     return image_features.cpu()
 
 # 定义函数，返回和文本查询的相似性得分
-def get_similarities(text_features, image_features):
+@torch.no_grad()
+def get_similarities(text_features, image_features, batch_size=128):
     # text = clip.tokenize([query]).to(device)
 
     image_features /= image_features.norm(dim=-1, keepdim=True)
     text_features /= text_features.norm(dim=-1, keepdim=True)
-    similarities = (100.0 * text_features @ image_features.T).softmax(dim=-1)#squeeze(0)
-
-    return similarities.cpu()
+    
+    num_rows = image_features.shape[0]
+    all_sims = []
+    for i in tqdm(range(0, num_rows, batch_size)):
+        end = min(i + batch_size, num_rows)
+        batch_features = image_features[i:end, :]
+        
+        similarities = (100.0 * text_features @ batch_features.T).softmax(dim=-1)#squeeze(0)
+        all_sims.append(similarities)
+    all_sims = torch.cat(all_sims).cpu()
+    
+    return all_sims
 
 
 def evaluate(data_file_path,unseen_comp_file_path, k):
