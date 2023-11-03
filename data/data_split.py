@@ -36,6 +36,14 @@ def sen_parse(caption):
   attributes.update(attribute)#属性
   return objects,attributes,relations
 
+def save_id_caption(path,id_list,id_caption):
+  text = 'image_id'+ '\t'+'caption'+ '\n'
+  for id in id_list:
+      text += str(id) + '\t' + id_caption[id] + '\n'
+  with open(path, 'w') as f:
+    f.write(text)
+
+
 def split_dataset(dataset, split_ratio):
     # 设置随机种子为10
     random.seed(10)
@@ -45,82 +53,70 @@ def split_dataset(dataset, split_ratio):
     test_data = dataset[split_index:]
     return train_data, test_data
 
-captions_train_path = r"/content/annotations/captions_train2017.json"
-# 读取json文件
-with open(captions_train_path, 'r') as f1:
-    dictortary = json.load(f1)
+def load_id_caption(caption_path):
+  # 读取json文件
+  with open(caption_path, 'r') as f1:
+      dictortary = json.load(f1)
 
-# 得到images和annotations信息
-images_value = dictortary.get("images")
-annotations_value = dictortary.get("annotations")
-#对训练caption进行解析
-attributes_train = set()
-relations_train = set()
-objects_train = set()
+  # 得到images和annotations信息
+  # images_value = dictortary.get("images")
+  annotations_value = dictortary.get("annotations")
 
-id_caption = dict()
 
-#每个测试图像仅保留一个caption
-for caption in tqdm(annotations_value):
-    image_id = caption['image_id']
-    caption_text = caption['caption']
+  id_caption = dict()
+  #每个测试图像仅保留一个caption
+  for caption in tqdm(annotations_value):
+      image_id = caption['image_id']
+      caption_text = caption['caption']
 
-    # 如果该图片id还未在字典中出现过，则添加到字典中
-    if image_id not in id_caption:
-        id_caption[image_id] = caption_text
-
-#split后数据的保存，保存至txt文件
-split_ratio = 0.8 #seen的图像占比
-train_id,test_id = split_dataset(list(id_caption.keys()),split_ratio)
-#对seen_caption进行解析并统计三类视觉概念
-for key in tqdm(train_id):
-  caption = id_caption[key]
-  objects_train.update(sen_parse(caption=caption)[0])
-  attributes_train.update(sen_parse(caption=caption)[1])
-  relations_train.update(sen_parse(caption=caption)[2])
-            
-unseen_comp_id = []
-unseen_atoms_id= []
-caption_test = []
-#遍历test中的id_caption，并对其进行分类
-for key in tqdm(test_id):
-  attributes_test = set()
-  relations_test = set()  
-  objects_test = set()
-  caption_test = id_caption[key]
-  objects_test.update(sen_parse(caption=caption_test)[0])
-  attributes_test.update(sen_parse(caption=caption_test)[1])
-  relations_test.update(sen_parse(caption=caption_test)[2])
-
-  if attributes_test.issubset(attributes_train) and relations_test.issubset(relations_train)\
-  and (objects_test.issubset(objects_train)):
-    unseen_comp_id.append(key)
-  else:
-    unseen_atoms_id.append(key)#前提test中没有train中图片的不同view,#COCO数据集本身train与test的图像有无交集??
+      # 如果该图片id还未在字典中出现过，则添加到字典中
+      if image_id not in id_caption:
+          id_caption[image_id] = caption_text
+  return id_caption
 
 
 
-#split后三类数据的保存，保存至txt文件
-unseen_atoms_id_path = r"/content/unseen_atoms.txt"
-unseen_comp_id_path = r"/content/unseen_comp.txt"
-seen_id_path = r"/content/seen.txt"
-text = 'image_id'+ '\t'+'caption'+ '\n'
+if __name__ == '__main__':
+    caption_path = r"/content/annotations/captions_train2017.json"
+    id_caption = load_id_caption(caption_path=caption_path)
+    #split后数据的保存，保存至txt文件
+    split_ratio = 0.8 #seen的图像占比
+    train_id,test_id = split_dataset(list(id_caption.keys()),split_ratio)
+    #对训练caption进行解析#对seen_caption进行解析并统计三类视觉概念
+    attributes_train = set()
+    relations_train = set()
+    objects_train = set()
+    for key in tqdm(train_id):
+      caption = id_caption[key]
+      objects_train.update(sen_parse(caption=caption)[0])
+      attributes_train.update(sen_parse(caption=caption)[1])
+      relations_train.update(sen_parse(caption=caption)[2])
+                
+    unseen_comp_id = []
+    unseen_atoms_id= []
+    caption_test = []
+    #遍历test中的id_caption，并对其进行分类
+    for key in tqdm(test_id):
+      attributes_test = set()
+      relations_test = set()  
+      objects_test = set()
+      caption_test = id_caption[key]
+      objects_test.update(sen_parse(caption=caption_test)[0])
+      attributes_test.update(sen_parse(caption=caption_test)[1])
+      relations_test.update(sen_parse(caption=caption_test)[2])
 
-for id in unseen_comp_id:
-    text += str(id) + '\t' + id_caption[id] + '\n'
-with open(unseen_comp_id_path, 'w') as f:
-    f.write(text)
+      if attributes_test.issubset(attributes_train) and relations_test.issubset(relations_train)\
+      and (objects_test.issubset(objects_train)):
+        unseen_comp_id.append(key)
+      else:
+        unseen_atoms_id.append(key)#前提test中没有train中图片的不同view,#COCO数据集本身train与test的图像有无交集??
 
+    #split后三类数据的保存，保存至txt文件
+    unseen_atoms_id_path = r"/content/unseen_atoms.txt"
+    unseen_comp_id_path = r"/content/unseen_comp.txt"
+    seen_id_path = r"/content/seen.txt"
+    text = 'image_id'+ '\t'+'caption'+ '\n'
 
-text = 'image_id'+ '\t'+'caption'+ '\n'
-for id in unseen_atoms_id:
-    text += str(id) + '\t' + id_caption[id] + '\n'
-with open(unseen_atoms_id_path, 'w') as f:
-    f.write(text)
-
-
-text = 'image_id'+ '\t'+'caption'+ '\n'
-for id in train_id:
-    text += str(id) + '\t' + id_caption[id] + '\n'
-with open(seen_id_path, 'w') as f:
-    f.write(text)
+    save_id_caption(unseen_atoms_id_path,unseen_atoms_id,id_caption)
+    save_id_caption(unseen_comp_id_path,unseen_comp_id,id_caption)
+    save_id_caption(seen_id_path,train_id,id_caption)
