@@ -60,9 +60,14 @@ def train(config, train_dataset, model):
 
 
     global_step, global_loss, global_acc =0,  0.0, 0.0
-    model.zero_grad()
-
-    for epoch in range(int(config.num_train_epochs)):
+    
+    start_epoch = 0
+    if config.resume:#
+        start_epoch,global_step = load_checkpoint(config, model, optimizer)
+    else:
+        model.zero_grad()
+    for epoch in range(start_epoch, config.num_train_epochs + 1):
+    # for epoch in range(int(config.num_train_epochs)):
         for step, batch in enumerate(train_dataloader):
             input_images, input_texts = batch
 
@@ -127,12 +132,30 @@ def train(config, train_dataset, model):
 
     return global_step, global_loss / global_step
 
+def load_checkpoint(config, model, optimizer):
+    if os.path.isfile(config.resume):
+        checkpoint = torch.load(config.resume, map_location='cpu')
+
+        epoch = checkpoint['epoch'] + 1
+        global_step = checkpoint['global_step'] + 1
+        # model.module.re_init(config)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+
+
+        logger.info("loaded checkpoint '{}' (epoch {})".format(config.resume, checkpoint['epoch']))
+
+    else:
+        logger.info("no checkpoint found at '{}'".format(config.resume)) 
+
+    return epoch,global_step
+
 
 def save_checkpoint(config, epoch, global_step, model, optimizer):
     '''
     Checkpointing. Saves model and optimizer state_dict() and current epoch and global training steps.
     '''
-    checkpoint_path = os.path.join(config.saved_checkpoints, f'checkpoint_{epoch}_{global_step}.pt')
+    checkpoint_path = os.path.join(config.checkpoint_path, f'checkpoint_{epoch}_{global_step}.pt')
     save_num = 0
     while (save_num < 10):
         try:
@@ -163,7 +186,7 @@ def save_checkpoint(config, epoch, global_step, model, optimizer):
 def main():
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--train_img_dir", default=None, type=str, required=False, help="path of directory containing COCO training images")
+    parser.add_argument("--img_dir", default=None, type=str, required=False, help="path of directory containing COCO training images")
     parser.add_argument("--train_annotation_file", default=None, type=str, required=False, help="path of COCO annotation file")
     args = parser.parse_args()
 
@@ -171,19 +194,20 @@ def main():
     train_config = load_config_file(TRAINER_CONFIG_PATH)
     model_config = load_config_file(MODEL_CONFIG_PATH)
 
+
     config = OmegaConf.merge(train_config, data_config)
 
     # config = OmegaConf.merge(OmegaConf.create(vars(args)), config)  
     # merging cli arguments, if data path given in cli args use those
-    if args.train_img_dir : 
-        config.train_img_dir = args.train_img_dir
+    if args.img_dir : 
+        config.img_dir = args.img_dir
     if args.train_annotation_file : 
         config.train_annotation_file = args.train_annotation_file
         
 
     global logger
     # creating directories for saving checkpoints and logs
-    mkdir(path=config.saved_checkpoints)
+    mkdir(path=config.checkpoint_path)
     mkdir(path=config.logs)
 
     logger = setup_logger("CLIP_COCO_TRAIN", config.logs, 0, filename = "training_logs.txt")
@@ -196,15 +220,15 @@ def main():
     tokenizer = SimpleTokenizer()
     
     # creating RN50 CLIP model
-    model_params = dict(model_config.RN50)
-    model_params['vision_layers'] = tuple(model_params['vision_layers'])
-    model_params['vision_patch_size'] = None
+    # model_params['vision_layers'] = tuple(model_params['vision_layers'])
+    # model_params['vision_patch_size'] = None
+    model_params = dict(model_config.ViTB32)
     model = CLIP(**model_params)
 
     logger.info(f"Training/evaluation parameters {train_config}")
 
     # getting dataset for training
-    train_dataset = CLIP_COCO_dataset(config, tokenizer)
+    train_dataset = CLIP_COCO_dataset("train",config, tokenizer)
 
     # Now training
     global_step, avg_loss = train(config, train_dataset, model)

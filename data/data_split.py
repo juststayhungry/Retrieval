@@ -5,9 +5,11 @@ import sng_parser
 import spacy
 from tqdm import *
 import random
-# 加载英文语言模型
-nlp = spacy.load('en_core_web_sm')
+from utils import load_config_file
+
 def extract_adjectives(sentence):
+    # 加载英文语言模型
+    nlp = spacy.load('en_core_web_sm')
     # 对句子进行分析
     doc = nlp(sentence)
     
@@ -62,7 +64,6 @@ def load_id_caption(caption_path):
   # images_value = dictortary.get("images")
   annotations_value = dictortary.get("annotations")
 
-
   id_caption = dict()
   #每个测试图像仅保留一个caption
   for caption in tqdm(annotations_value):
@@ -74,27 +75,21 @@ def load_id_caption(caption_path):
           id_caption[image_id] = caption_text
   return id_caption
 
-
-
-if __name__ == '__main__':
-    caption_path = r"/content/annotations/captions_train2017.json"
-    id_caption = load_id_caption(caption_path=caption_path)
-    #split后数据的保存，保存至txt文件
-    split_ratio = 0.8 #seen的图像占比
-    train_id,test_id = split_dataset(list(id_caption.keys()),split_ratio)
-    #对训练caption进行解析#对seen_caption进行解析并统计三类视觉概念
+def collect_seen_items(id_caption,seen_id):
     attributes_train = set()
     relations_train = set()
     objects_train = set()
-    for key in tqdm(train_id):
+    for key in tqdm(seen_id):
       caption = id_caption[key]
       objects_train.update(sen_parse(caption=caption)[0])
       attributes_train.update(sen_parse(caption=caption)[1])
       relations_train.update(sen_parse(caption=caption)[2])
-                
+
+    return objects_train,attributes_train,relations_train
+
+def find_unseen_comp(id_caption,test_id):
     unseen_comp_id = []
     unseen_atoms_id= []
-    caption_test = []
     #遍历test中的id_caption，并对其进行分类
     for key in tqdm(test_id):
       attributes_test = set()
@@ -109,14 +104,25 @@ if __name__ == '__main__':
       and (objects_test.issubset(objects_train)):
         unseen_comp_id.append(key)
       else:
-        unseen_atoms_id.append(key)#前提test中没有train中图片的不同view,#COCO数据集本身train与test的图像有无交集??
+        unseen_atoms_id.append(key)
+    return unseen_comp_id,unseen_atoms_id
+   
 
+if __name__ == '__main__':
+    DATA_CONFIG_PATH = "data\data_config.yaml"
+    config = load_config_file(DATA_CONFIG_PATH)
+    caption_path = config.annotation_caption_file
+    id_caption = load_id_caption(caption_path=caption_path)
+    #split后数据的保存，保存至txt文件
+    split_ratio = 0.8 #seen的图像占比
+    seen_id,test_id = split_dataset(list(id_caption.keys()),split_ratio)
+    #对训练caption进行解析#对seen_caption进行解析并统计三类视觉概念
+    objects_train,attributes_train,relations_train = collect_seen_items(id_caption,seen_id)
+    unseen_comp_id,_=find_unseen_comp(id_caption,test_id)
+                
     #split后三类数据的保存，保存至txt文件
-    unseen_atoms_id_path = r"/content/unseen_atoms.txt"
-    unseen_comp_id_path = r"/content/unseen_comp.txt"
-    seen_id_path = r"/content/seen.txt"
-    text = 'image_id'+ '\t'+'caption'+ '\n'
+    unseen_comp_id_path = config.unseen_imgid_caption_dir
+    seen_id_path = config.seen_imgid_caption_dir
 
-    save_id_caption(unseen_atoms_id_path,unseen_atoms_id,id_caption)
     save_id_caption(unseen_comp_id_path,unseen_comp_id,id_caption)
-    save_id_caption(seen_id_path,train_id,id_caption)
+    save_id_caption(seen_id_path,seen_id,id_caption)

@@ -1,4 +1,4 @@
-train_img_dir : 'data/mscoco/train2017'
+img_dir : 'data/mscoco/train2017'
 # '/content/train2017'
 
 seen_imgid_caption_dir : 'data/mscoco/'
@@ -6,7 +6,7 @@ seen_imgid_caption_dir : 'data/mscoco/'
 unseen_imgid_caption_dir : 'data/mscoco/'
 # "/content/gdrive/MyDrive/data_split/unseen_comp.txt"
 
-train_annotation_file : 'data/mscoco/annotations/captions_train2017.json'
+annotation_caption_file : 'data/mscoco/annotations/captions_train2017.json'
 
 
 

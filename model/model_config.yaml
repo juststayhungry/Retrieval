@@ -8,6 +8,30 @@ RN50:
   vocab_size : 49408
   transformer_width : 512
   transformer_heads : 8
-  transformer_layers : 6 # 12 in CLIP
+  transformer_layers : 12 
 
 
+ViTB32:
+  embed_dim : 512
+  image_resolution : 224
+  vision_layers : 12
+  vision_width : 768
+  vision_patch_size : 32 
+  context_length : 77
+  vocab_size : 49408
+  transformer_width : 512
+  transformer_heads : 8
+  transformer_layers : 12 
+
+
+ViTB16:
+  embed_dim : 512
+  image_resolution : 224
+  vision_layers : 12
+  vision_width : 768
+  vision_patch_size : 16
+  context_length : 77
+  vocab_size : 49408
+  transformer_width : 512
+  transformer_heads : 8
+  transformer_layers : 12 

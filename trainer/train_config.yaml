@@ -9,7 +9,8 @@ gradient_accumulation_steps : 1 # Number of updates steps to accumulate before b
 logging_steps : 50 #  log every this steps
 save_steps : 1000 # 1000 steps take 1 hour with 4 GTX1080 GPUs and batch size = 256 (64 per GPU)
 
-saved_checkpoints : saved_checkpoints
+checkpoint_path : saved_checkpoints
+resume:
 logs : logs
 
 optimizer:
