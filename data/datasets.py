@@ -22,13 +22,13 @@ class CLIP_COCO_dataset(Dataset):
         super(CLIP_COCO_dataset, self).__init__()
         if phase == 'train_on_seen':
             self.data = self.read_txt(config.seen_imgid_caption_dir)
-        if phase == 'train_on_all':
+        elif phase == 'train_on_all':
             self.data = self.read_txt(config.seen_imgid_caption_dir)
-            self.data.append(self.read_txt(config.unseen_imgid_caption_dir))
-        elif phase == 'eval':
+            self.data.extend(self.read_txt(config.unseen_imgid_caption_dir))
+        elif phase == 'eval':#eval on unseen image
             self.data = self.read_txt(config.unseen_imgid_caption_dir)
         else:
-            raise ValueError('Invalid transform')
+            raise ValueError('Invalid phase')
         self.image_path = config.img_dir
         self.transform = _transform(input_resolution)
         self._tokenizer = text_tokenizer

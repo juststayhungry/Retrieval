@@ -16,11 +16,6 @@ from torch.optim import Adam, AdamW # both are same but AdamW has a default weig
 
 import argparse
 
-
-DATA_CONFIG_PATH = 'data/data_config.yaml'
-TRAINER_CONFIG_PATH = 'trainer/train_config.yaml'
-MODEL_CONFIG_PATH = 'model/model_config.yaml'
-
 def train(config, train_dataset, model):
     '''
     Trains the model.
@@ -44,6 +39,7 @@ def train(config, train_dataset, model):
     
     model = model.to(torch.device(config.device))
     model.train()
+    model.zero_grad()
 
     logger.info("***** Running training *****")
     logger.info("  Num examples = %d", len(train_dataset))
@@ -61,11 +57,11 @@ def train(config, train_dataset, model):
 
     global_step, global_loss, global_acc =0,  0.0, 0.0
     
-    start_epoch = 0
+    start_epoch = 1
     if config.resume:#
         start_epoch,global_step = load_checkpoint(config, model, optimizer)
-    else:
-        model.zero_grad()
+    # else:
+        # model.zero_grad()#?????
     for epoch in range(start_epoch, config.num_train_epochs + 1):
     # for epoch in range(int(config.num_train_epochs)):
         for step, batch in enumerate(train_dataloader):
@@ -98,7 +94,8 @@ def train(config, train_dataset, model):
             if config.n_gpu > 1: 
                 loss = loss.mean() # mean() to average on multi-gpu parallel training
             if config.gradient_accumulation_steps > 1:
-                loss = loss / config.gradient_accumulation_steps
+                loss = loss / config.gradient_accumulation_steps #50000 
+            model.zero_grad()
 
             loss.backward()
 
@@ -116,18 +113,18 @@ def train(config, train_dataset, model):
 
                 if scheduler:
                     scheduler.step() 
-                    
-                model.zero_grad()
+                
 
                 if global_step % config.logging_steps == 0:
                     logger.info("Epoch: {}, global_step: {}, lr: {:.6f}, loss: {:.4f} ({:.4f})".format(epoch, global_step, 
                         optimizer.param_groups[0]["lr"], loss.item(), global_loss / global_step)
                     )
 
-                if (config.save_steps > 0 and global_step % config.save_steps == 0) or \
-                        global_step == t_total:
+                # if (config.save_steps > 0 and global_step % config.save_steps == 0 and epoch%3==0) or \
+                #         global_step == t_total:
                     # saving checkpoint
-                    save_checkpoint(config, epoch, global_step, model, optimizer) 
+        if (config.save_epochs > 0 and epoch % config.save_epochs == 0 or epoch == config.num_train_epochs): 
+            save_checkpoint(config, epoch, global_step, model, optimizer) 
                     
 
     return global_step, global_loss / global_step
@@ -137,7 +134,7 @@ def load_checkpoint(config, model, optimizer):
         checkpoint = torch.load(config.resume, map_location='cpu')
 
         epoch = checkpoint['epoch'] + 1
-        global_step = checkpoint['global_step'] + 1
+        global_step = checkpoint['global_step'] 
         # model.module.re_init(config)
         model.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
@@ -155,7 +152,7 @@ def save_checkpoint(config, epoch, global_step, model, optimizer):
     '''
     Checkpointing. Saves model and optimizer state_dict() and current epoch and global training steps.
     '''
-    checkpoint_path = os.path.join(config.checkpoint_path, f'checkpoint_{epoch}_{global_step}.pt')
+    checkpoint_path = os.path.join(config.checkpoint_dir, f'checkpoint_{epoch}_{global_step}.pt')
     save_num = 0
     while (save_num < 10):
         try:
@@ -186,8 +183,8 @@ def save_checkpoint(config, epoch, global_step, model, optimizer):
 def main():
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--img_dir", default=None, type=str, required=False, help="path of directory containing COCO training images")
-    parser.add_argument("--train_annotation_file", default=None, type=str, required=False, help="path of COCO annotation file")
+    parser.add_argument("--img_dir", default=None, type=str, required=False, help="path of directory containing training images")
+    parser.add_argument("--train_type",default="train_on_seen",type=str,choices=["train_on_seen","train_on_all"],required=False,help="select train type")
     args = parser.parse_args()
 
     data_config = load_config_file(DATA_CONFIG_PATH)
@@ -201,13 +198,10 @@ def main():
     # merging cli arguments, if data path given in cli args use those
     if args.img_dir : 
         config.img_dir = args.img_dir
-    if args.train_annotation_file : 
-        config.train_annotation_file = args.train_annotation_file
         
-
     global logger
     # creating directories for saving checkpoints and logs
-    mkdir(path=config.checkpoint_path)
+    mkdir(path=config.checkpoint_dir)
     mkdir(path=config.logs)
 
     logger = setup_logger("CLIP_COCO_TRAIN", config.logs, 0, filename = "training_logs.txt")
@@ -228,7 +222,8 @@ def main():
     logger.info(f"Training/evaluation parameters {train_config}")
 
     # getting dataset for training
-    train_dataset = CLIP_COCO_dataset("train",config, tokenizer)
+    train_dataset = CLIP_COCO_dataset(args.train_type,config, tokenizer)
+    logger.info("train_type : '{}'".format(args.train_type))
 
     # Now training
     global_step, avg_loss = train(config, train_dataset, model)
@@ -237,4 +232,7 @@ def main():
     
 
 if __name__ == "__main__":
+    DATA_CONFIG_PATH = 'data/data_config.yaml'
+    TRAINER_CONFIG_PATH = 'trainer/train_config.yaml'
+    MODEL_CONFIG_PATH = 'model/model_config.yaml'
     main()

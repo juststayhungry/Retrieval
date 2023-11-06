@@ -1,11 +1,10 @@
 import random
-import os
 import json
 import sng_parser
 import spacy
 from tqdm import *
 import random
-from utils import load_config_file
+from utils import load_config_file,set_seed
 
 def extract_adjectives(sentence):
     # 加载英文语言模型
@@ -48,7 +47,7 @@ def save_id_caption(path,id_list,id_caption):
 
 def split_dataset(dataset, split_ratio):
     # 设置随机种子为10
-    random.seed(10)
+    set_seed(seed=10, n_gpu=0)
     random.shuffle(dataset)  # 随机打乱数据集顺序
     split_index = int(len(dataset) * split_ratio)
     train_data = dataset[:split_index]
@@ -56,12 +55,9 @@ def split_dataset(dataset, split_ratio):
     return train_data, test_data
 
 def load_id_caption(caption_path):
-  # 读取json文件
   with open(caption_path, 'r') as f1:
       dictortary = json.load(f1)
 
-  # 得到images和annotations信息
-  # images_value = dictortary.get("images")
   annotations_value = dictortary.get("annotations")
 
   id_caption = dict()
@@ -113,7 +109,7 @@ if __name__ == '__main__':
     config = load_config_file(DATA_CONFIG_PATH)
     caption_path = config.annotation_caption_file
     id_caption = load_id_caption(caption_path=caption_path)
-    #split后数据的保存，保存至txt文件
+  
     split_ratio = 0.8 #seen的图像占比
     seen_id,test_id = split_dataset(list(id_caption.keys()),split_ratio)
     #对训练caption进行解析#对seen_caption进行解析并统计三类视觉概念
@@ -123,6 +119,7 @@ if __name__ == '__main__':
     #split后三类数据的保存，保存至txt文件
     unseen_comp_id_path = config.unseen_imgid_caption_dir
     seen_id_path = config.seen_imgid_caption_dir
+    
 
     save_id_caption(unseen_comp_id_path,unseen_comp_id,id_caption)
     save_id_caption(seen_id_path,seen_id,id_caption)

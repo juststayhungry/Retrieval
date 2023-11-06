@@ -1,16 +1,18 @@
 import torch
+import os
 import clip
 import numpy as np
 from PIL import Image
 from tqdm import *
-from utils import set_seed, setup_logger, load_config_file
+from utils import mkdir, setup_logger, load_config_file
 from data.datasets import CLIP_COCO_dataset
 from model.model import CLIP
 from utils.simple_tokenizer import SimpleTokenizer
 
+
 # 定义函数，返回和文本查询的相似性得分
 @torch.no_grad()
-def get_similarities(text_features, image_features, batch_size=128):
+def get_similarities(image_features,text_features,batch_size=128):
     image_features /= image_features.norm(dim=-1, keepdim=True)
     text_features /= text_features.norm(dim=-1, keepdim=True)
     
@@ -56,7 +58,7 @@ def evaluate(model,data_config,k_list):
         image_features_list.append(image_feature.to("cpu"))
     text_features = torch.cat(text_features_list, dim=0)
     image_features = torch.cat(image_features_list, dim=0)
-    similarities_i2t = get_similarities(text_features.float(), image_features.float(),batch_size)
+    similarities_i2t = get_similarities(image_features.float(), text_features.float(),batch_size)
     similarities_t2i = similarities_i2t.T
     for k in k_list:
       correct_i2t =0
@@ -72,36 +74,43 @@ def evaluate(model,data_config,k_list):
       recall_i2t.append(float(correct_i2t) / float(total))
       recall_t2i.append(float(correct_t2i) / float(total))
 
-    path1 = "/content/drive/MyDrive/data_split/i2tsave.txt"
-    path2 ="/content/drive/MyDrive/data_split/t2isave.txt"
-    save_data(path1,recall_i2t)
-    save_data(path2,recall_t2i)
-    return ("i2t",recall_i2t),("t2i",recall_t2i)
+    return recall_i2t,recall_t2i
 
 
 if __name__ == '__main__':
+    DATA_CONFIG_PATH = 'data/data_config.yaml'
+    TRAINER_CONFIG_PATH = 'trainer/train_config.yaml'
+    MODEL_CONFIG_PATH = 'model/model_config.yaml'
 
-    DATA_CONFIG_PATH = '/content/drive/MyDrive/code/Retrieval/data/data_config.yaml'
-    TRIAN_CONFIG_PATH = "/trainer/train_config.yaml"
     data_config = load_config_file(DATA_CONFIG_PATH)
-    train_config = load_config_file(TRIAN_CONFIG_PATH)
-
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    #eval on OPEN AI CLIP
-    model, preprocess = clip.load("ViT-B/32", device=device)
+    train_config = load_config_file(TRAINER_CONFIG_PATH)
+    mkdir(path=data_config.eval_result_dir)
     
-    # #eval on our trained CLIP
-    # model_config = "model/model_config.yaml"
-    # # creating  CLIP model
-    # model_params = dict(model_config.ViTB32)
-    # model = CLIP(**model_params)
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    #1.eval on OPEN AI pretrained CLIP
+    openai_pretrained_model, _ = clip.load("ViT-B/32", device=device)
 
-    # # loading trained weights
-    # checkpoint = torch.load(train_config.checkpoint_path)
-    # state_dict = checkpoint['model_state_dict']
-    # model.load_state_dict(state_dict)
-    # model = model.to(device)
-    # model.eval()
+    #2.eval on our trained CLIP
+    model_config = load_config_file(MODEL_CONFIG_PATH)
+    # creating  CLIP model
+    model_params = dict(model_config.ViTB32)
+    model = CLIP(**model_params)
 
+    # loading trained weights
+    model_path =  os.path.join(train_config.checkpoint_dir, f'checkpoint_36_50000.pt')#add checkpoint's name
+    checkpoint = torch.load(model_path)
+    state_dict = checkpoint['model_state_dict']
+    model.load_state_dict(state_dict)
+    model = model.to(device)
+    model.eval()
+    
     k_list = [1,5,10]#recall@k
-    recall = evaluate(model,data_config, k_list)
+    recall1,_ = evaluate(openai_pretrained_model,data_config, k_list)
+    result_path1 =  os.path.join(data_config.eval_result_dir, f'baseline1_result.txt')
+    save_data(result_path1,recall1)
+    
+    recall2,_ = evaluate(model,data_config, k_list)
+    result_path2 =  os.path.join(data_config.eval_result_dir, f'baseline2_result.txt')
+    save_data(result_path2,recall2)
+    
+

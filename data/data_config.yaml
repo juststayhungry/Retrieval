@@ -1,13 +1,13 @@
 img_dir : 'data/mscoco/train2017'
 # '/content/train2017'
 
-seen_imgid_caption_dir : 'data/mscoco/'
+seen_imgid_caption_dir : 'data/mscoco/seen.txt'
 #"/content/drive/MyDrive/data_split/seen.txt"
-unseen_imgid_caption_dir : 'data/mscoco/'
+unseen_imgid_caption_dir : 'data/mscoco/unseen_comp.txt'
 # "/content/gdrive/MyDrive/data_split/unseen_comp.txt"
 
 annotation_caption_file : 'data/mscoco/annotations/captions_train2017.json'
 
-
+eval_result_dir: "data/mscoco/eval_result"
 
 
