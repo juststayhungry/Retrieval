@@ -4,7 +4,7 @@ import sng_parser
 import spacy
 from tqdm import *
 import random
-from utils import load_config_file,set_seed
+from utils.util import load_config_file,set_seed
 
 def extract_adjectives(sentence):
     # 加载英文语言模型

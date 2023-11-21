@@ -1,7 +1,8 @@
 torch
 torchvision
 tqdm
-git+https://github.com/openai/CLIP.git
+clip @ git+https://github.com/openai/CLIP.git
 omegaconf
 spacy
 SceneGraphParser
+ftfy

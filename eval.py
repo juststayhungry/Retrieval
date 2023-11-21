@@ -8,6 +8,7 @@ from utils import mkdir, setup_logger, load_config_file
 from data.datasets import CLIP_COCO_dataset
 from model.model import CLIP
 from utils.simple_tokenizer import SimpleTokenizer
+import argparse
 
 
 # 定义函数，返回和文本查询的相似性得分
@@ -22,7 +23,7 @@ def get_similarities(image_features,text_features,batch_size=128):
         end = min(i + batch_size, num_rows)
         batch_features = image_features[i:end, :]
         #BK KN   BN i2t  
-        similarities = (100.0 * batch_features@text_features.T).softmax(dim=-1)#squeeze(0)
+        similarities = (100.0 * batch_features@text_features.T).softmax(dim=-1)
         all_sims.append(similarities)
     all_sims = torch.cat(all_sims).cpu()
     
@@ -37,6 +38,7 @@ def save_data(file_path,data):
 
 def evaluate(model,data_config,k_list):
     tokenizer = SimpleTokenizer()
+    model.eval()
     eval_dataset = CLIP_COCO_dataset("eval",data_config,tokenizer)
     batch_size = 128
     total = len(eval_dataset)
@@ -46,19 +48,19 @@ def evaluate(model,data_config,k_list):
     text_features_list = []
     recall_i2t = []
     recall_t2i = []
-    for i, batch in tqdm(enumerate(eval_loader)):
-        image ,caption = batch #B D
-        image = image.to(device)#???
-        text = caption.to(device)
-        with torch.no_grad():
-          text_feature = model.encode_text(text)
-          image_feature = model.encode_image(image) 
-        #先分批次读取后再对特征进行汇总
-        text_features_list.append(text_feature.to("cpu"))
-        image_features_list.append(image_feature.to("cpu"))
-    text_features = torch.cat(text_features_list, dim=0)
-    image_features = torch.cat(image_features_list, dim=0)
-    similarities_i2t = get_similarities(image_features.float(), text_features.float(),batch_size)
+    with torch.no_grad():
+      for i, batch in tqdm(enumerate(eval_loader)):
+          image ,caption = batch #B D
+          image = image.to(device)#???
+          text = caption.to(device)
+          with torch.no_grad():
+            text_feature = model.encode_text(text)
+            image_feature = model.encode_image(image) 
+          text_features_list.append(text_feature.to("cpu"))
+          image_features_list.append(image_feature.to("cpu"))
+      text_features = torch.cat(text_features_list, dim=0)
+      image_features = torch.cat(image_features_list, dim=0)
+      similarities_i2t = get_similarities(image_features.float(), text_features.float(),batch_size)
     similarities_t2i = similarities_i2t.T
     for k in k_list:
       correct_i2t =0
@@ -78,6 +80,13 @@ def evaluate(model,data_config,k_list):
 
 
 if __name__ == '__main__':
+    
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--val-data", default=None, type=str, required=False, help="path of the data for evaluating")
+    parser.add_argument("--model",default="ViT-B/32",type=str,choices=["RN101","RN50"],required=False,help="select model type")
+    parser.add_argument("--pretrained-pt-name",default="RN50",type=str,required=False,help="path/to/checkpoints/epoch_K.pt")
+    args = parser.parse_args()
+
     DATA_CONFIG_PATH = 'data/data_config.yaml'
     TRAINER_CONFIG_PATH = 'trainer/train_config.yaml'
     MODEL_CONFIG_PATH = 'model/model_config.yaml'
@@ -88,7 +97,8 @@ if __name__ == '__main__':
     
     device = "cuda" if torch.cuda.is_available() else "cpu"
     #1.eval on OPEN AI pretrained CLIP
-    openai_pretrained_model, _ = clip.load("ViT-B/32", device=device)
+    model_name = args.module#open ai pretrained model's name
+    openai_pretrained_model, _ = clip.load(model_name, device=device)
 
     #2.eval on our trained CLIP
     model_config = load_config_file(MODEL_CONFIG_PATH)
@@ -97,12 +107,14 @@ if __name__ == '__main__':
     model = CLIP(**model_params)
 
     # loading trained weights
+    #trained path
+
     model_path =  os.path.join(train_config.checkpoint_dir, f'checkpoint_36_50000.pt')#add checkpoint's name
     checkpoint = torch.load(model_path)
     state_dict = checkpoint['model_state_dict']
     model.load_state_dict(state_dict)
     model = model.to(device)
-    model.eval()
+    
     
     k_list = [1,5,10]#recall@k
     recall1,_ = evaluate(openai_pretrained_model,data_config, k_list)

@@ -356,3 +356,4 @@ class CLIP(nn.Module):
         text_features = self.encode_text(text)
 
         return image_features, text_features 
+

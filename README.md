@@ -29,3 +29,4 @@ python train.py --img_dir "path of directory containing training images" --train
 Our codebase builds upon several existing publicly available codes. Specifically, we have modified and integrated the following repos into this project:
 
 * https://github.com/openai/CLIP
+* https://github.com/mlfoundations/open_clip
