@@ -4,5 +4,6 @@ tqdm
 clip @ git+https://github.com/openai/CLIP.git
 omegaconf
 spacy
+sng_parser
 SceneGraphParser
 ftfy

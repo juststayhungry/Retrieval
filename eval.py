@@ -3,10 +3,13 @@ import os
 import clip
 import numpy as np
 from PIL import Image
+import ipdb
 from tqdm import *
 from utils import mkdir, setup_logger, load_config_file
-from data.datasets import CLIP_COCO_dataset
-from model.model import CLIP
+from data.datasets import CLIP_COCO_dataset,CompositionDataset
+from data.data_loaders import DATASET_PATHS
+from model.modules import get_model
+from omegaconf import OmegaConf
 from utils.simple_tokenizer import SimpleTokenizer
 import argparse
 
@@ -36,28 +39,38 @@ def save_data(file_path,data):
     with open(file_path, 'w') as f:
         f.write(text)
 
-def evaluate(model,data_config,k_list):
+def evaluate(model,config,batch_size,k_list):
     tokenizer = SimpleTokenizer()
     model.eval()
-    eval_dataset = CLIP_COCO_dataset("eval",data_config,tokenizer)
-    batch_size = 128
+    if config.dataset == "coco":
+        eval_dataset = CLIP_COCO_dataset(config,tokenizer)
+    else:
+        eval_dataset = CompositionDataset(config,tokenizer)
     total = len(eval_dataset)
     print("总共有{}个caption".format(total))
-    eval_loader = torch.utils.data.DataLoader(eval_dataset,batch_size=batch_size)#
+    eval_loader = torch.utils.data.DataLoader(eval_dataset,batch_size=batch_size,shuffle=False)#
     image_features_list = []
     text_features_list = []
+    pairs_id_list = []
     recall_i2t = []
     recall_t2i = []
     with torch.no_grad():
       for i, batch in tqdm(enumerate(eval_loader)):
-          image ,caption = batch #B D
-          image = image.to(device)#???
-          text = caption.to(device)
+          if config.dataset == "coco":
+            image ,caption = batch #B D
+          else:
+            image ,caption,pairs_id = batch #B D
+          image = image.to(config.device)#???
+          text = caption.to(config.device)
           with torch.no_grad():
-            text_feature = model.encode_text(text)
-            image_feature = model.encode_image(image) 
+              text_feature = model.encode_text(text)
+              image_feature = model.encode_image(image) 
           text_features_list.append(text_feature.to("cpu"))
           image_features_list.append(image_feature.to("cpu"))
+          if config.dataset == "coco":
+              pairs_id_list = [i for i in range(total)]
+          else:
+              pairs_id_list.extend(pairs_id.to("cpu"))
       text_features = torch.cat(text_features_list, dim=0)
       image_features = torch.cat(image_features_list, dim=0)
       similarities_i2t = get_similarities(image_features.float(), text_features.float(),batch_size)
@@ -67,7 +80,8 @@ def evaluate(model,data_config,k_list):
       correct_t2i =0
       for i in range(total):#遍历每张图像，检索k个文本id
           values,indices = similarities_i2t[i].topk(k)#
-          if i in indices:
+          pairs_id_list1 = [pairs_id_list[j] for j in indices]
+          if pairs_id_list[i] in pairs_id_list1:
             correct_i2t += 1
           values,indices = similarities_t2i[i].topk(k)##遍历每个文本，检索k个图像id         
           if i in indices:
@@ -79,12 +93,14 @@ def evaluate(model,data_config,k_list):
     return recall_i2t,recall_t2i
 
 
+
 if __name__ == '__main__':
     
     parser = argparse.ArgumentParser()
-    parser.add_argument("--val-data", default=None, type=str, required=False, help="path of the data for evaluating")
-    parser.add_argument("--model",default="ViT-B/32",type=str,choices=["RN101","RN50"],required=False,help="select model type")
-    parser.add_argument("--pretrained-pt-name",default="RN50",type=str,required=False,help="path/to/checkpoints/epoch_K.pt")
+#     parser.add_argument("--val-data", default=None, type=str, required=False, help="path of the data for evaluating")
+    parser.add_argument("--model",default="ViT-B/32",type=str,choices=["RN101","RN50","ViT-B/32"],required=False,help="select model type")
+    parser.add_argument("--batch-size",default="16",type=int,required=False,help="evaluate batchsize")
+#     parser.add_argument("--pretrained-pt-name",default="RN50",type=str,required=False,help="path/to/checkpoints/epoch_K.pt")
     args = parser.parse_args()
 
     DATA_CONFIG_PATH = 'data/data_config.yaml'
@@ -93,36 +109,36 @@ if __name__ == '__main__':
 
     data_config = load_config_file(DATA_CONFIG_PATH)
     train_config = load_config_file(TRAINER_CONFIG_PATH)
-    mkdir(path=data_config.eval_result_dir)
     
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    mkdir(path=data_config.eval_result_dir)
+    train_config.device = "cuda" if torch.cuda.is_available() else "cpu"
+    config = OmegaConf.merge(train_config, data_config)
+    config.dataset = "coco"
+    config.img_dir = DATASET_PATHS[config.dataset]
+    config.train_type ="eval"
     #1.eval on OPEN AI pretrained CLIP
-    model_name = args.module#open ai pretrained model's name
-    openai_pretrained_model, _ = clip.load(model_name, device=device)
+    model_name = args.model#open ai pretrained model's name
+    openai_pretrained_model, _ = clip.load(model_name, device=config.device)
 
     #2.eval on our trained CLIP
-    model_config = load_config_file(MODEL_CONFIG_PATH)
-    # creating  CLIP model
-    model_params = dict(model_config.ViTB32)
-    model = CLIP(**model_params)
-
+    model= get_model(config)
     # loading trained weights
     #trained path
-
-    model_path =  os.path.join(train_config.checkpoint_dir, f'checkpoint_36_50000.pt')#add checkpoint's name
+    config.checkpoint_dir = 'adapter_coco_saved_checkpoints'
+    model_path =  os.path.join(config.checkpoint_dir, f'checkpoint_30_44370.pt')#add checkpoint's name
     checkpoint = torch.load(model_path)
     state_dict = checkpoint['model_state_dict']
     model.load_state_dict(state_dict)
-    model = model.to(device)
+    model = model.to(config.device)
     
     
     k_list = [1,5,10]#recall@k
-    recall1,_ = evaluate(openai_pretrained_model,data_config, k_list)
-    result_path1 =  os.path.join(data_config.eval_result_dir, f'baseline1_result.txt')
+    recall1,_ = evaluate(openai_pretrained_model,config,args.batch_size, k_list)
+    result_path1 =  os.path.join(config.eval_result_dir, f'b1_result.txt')
     save_data(result_path1,recall1)
     
-    recall2,_ = evaluate(model,data_config, k_list)
-    result_path2 =  os.path.join(data_config.eval_result_dir, f'baseline2_result.txt')
+    recall2,_ = evaluate(model,config,args.batch_size, k_list)
+    result_path2 =  os.path.join(config.eval_result_dir, f'b2_result.txt')
     save_data(result_path2,recall2)
     
 

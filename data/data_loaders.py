@@ -1,5 +1,14 @@
+import os
 from torch.utils.data import Dataset, DataLoader, RandomSampler, SequentialSampler
 
+DIR_PATH = os.path.dirname(os.path.realpath(__file__))
+
+DATASET_PATHS = {
+    "mit-states": os.path.join(DIR_PATH, "../data/mit-states"),
+    "ut-zappos": os.path.join(DIR_PATH, "../data/ut-zappos"),
+    "cgqa": os.path.join(DIR_PATH, "../cgqa"),
+    "coco": os.path.join(DIR_PATH, "../data/mscoco/train2017")
+}
 
 def get_dataloader(config, dataset, is_train = True):
     
@@ -14,3 +23,4 @@ def get_dataloader(config, dataset, is_train = True):
             batch_size=batch_size, num_workers=config.num_workers)
 
     return dataloader
+

@@ -1,6 +1,7 @@
 import torch
 from torch.utils.data import Dataset
 import os
+import ipdb
 from torchvision.transforms import (CenterCrop, Compose, InterpolationMode,
                                     Normalize, RandomHorizontalFlip,
                                     RandomPerspective, RandomRotation, Resize,
@@ -10,65 +11,34 @@ from torch.utils.data.dataloader import DataLoader
 from PIL import Image
 n_px =224
 
-def transform_image(split="train", imagenet=False,coco=False):
-    if imagenet:
-        # from czsl repo.
-        mean, std = [0.485, 0.456, 0.406], [0.229, 0.224, 0.225]
-        transform = Compose(
-            [
-                RandomResizedCrop(n_px),
-                RandomHorizontalFlip(),
-                ToTensor(),
-                Normalize(
-                    mean,
-                    std,
-                ),
-            ]
-        )
-        return transform
+def transform_image(phase="train", imagenet=False,coco=False):
     if coco:
         mean, std = (0.4225, 0.4012, 0.3659), (0.2681, 0.2635, 0.2763)
-        transform = Compose(
-            [
-                RandomResizedCrop(n_px),
-                RandomHorizontalFlip(),
-                ToTensor(),
-                Normalize(
-                    mean,
-                    std,
-                ),
-            ]
-        )
-        return transform
+    else:
+        mean, std = (0.48145466, 0.4578275, 0.40821073),(0.26862954, 0.26130258, 0.27577711)
 
-    if split == "test" or split == "val":
+    if phase == "test" or phase == "eval":
         transform = Compose(
             [
-                Resize(n_px, interpolation=Image.BICUBIC),
+                Resize(n_px, interpolation=InterpolationMode.BICUBIC),
                 CenterCrop(n_px),
                 lambda image: image.convert("RGB"),
                 ToTensor(),
-                Normalize(
-                    (0.48145466, 0.4578275, 0.40821073),
-                    (0.26862954, 0.26130258, 0.27577711),
-                ),
+                Normalize(mean,std),
             ]
         )
     else:
         transform = Compose(
             [
                 # RandomResizedCrop(n_px, interpolation=BICUBIC),
-                Resize(n_px, interpolation=Image.BICUBIC),
+                Resize(n_px, interpolation=InterpolationMode.BICUBIC),
                 CenterCrop(n_px),
                 RandomHorizontalFlip(),
                 RandomPerspective(),
                 RandomRotation(degrees=5),
                 lambda image: image.convert("RGB"),
                 ToTensor(),
-                Normalize(
-                    (0.48145466, 0.4578275, 0.40821073),
-                    (0.26862954, 0.26130258, 0.27577711),
-                ),
+                Normalize(mean,std),
             ]
         )
 
@@ -77,20 +47,21 @@ def transform_image(split="train", imagenet=False,coco=False):
 class CLIP_COCO_dataset(Dataset):
     """CLIP_COCO_dataset. To train CLIP on COCO-Captions."""
 
-    def __init__(self,phase,config, text_tokenizer, context_length=77, input_resolution=224):
-        
+    def __init__(self,config, text_tokenizer,context_length=77, input_resolution=224):
+        self.phase = config.train_type
+        self.image_path = config.img_dir
         super(CLIP_COCO_dataset, self).__init__()
-        if phase == 'train_on_seen':
+        if self.phase == 'train_on_seen':
             self.data = self.read_txt(config.seen_imgid_caption_dir)
-        elif phase == 'train_on_all':
+        elif self.phase == 'train_on_all':
             self.data = self.read_txt(config.seen_imgid_caption_dir)
             self.data.extend(self.read_txt(config.unseen_imgid_caption_dir))
-        elif phase == 'eval':#eval on unseen image
+        elif self.phase == 'eval':#eval on unseen image
             self.data = self.read_txt(config.unseen_imgid_caption_dir)
         else:
             raise ValueError('Invalid phase')
-        self.image_path = config.img_dir
-        self.transform = transform_image(coco=True)
+        
+        self.transform = transform_image(self.phase,coco=True)
         self._tokenizer = text_tokenizer
         self.context_length = context_length
 
@@ -148,24 +119,23 @@ class ImageLoader:
         img = Image.open(file).convert('RGB')
         return img
 
-
+    
 class CompositionDataset(Dataset):
     def __init__(
             self,
-            root,
-            phase,
+            config,
             text_tokenizer,
             split='compositional-split-natural',
             imagenet=False
     ):
-        self.root = root
-        self.phase = phase
+        self.phase = config.train_type
+        self.root = config.img_dir
         self.split = split
         self._tokenizer = text_tokenizer
         self.context_length = 77
 
 
-        self.transform = transform_image(phase, imagenet=imagenet)
+        self.transform = transform_image(self.phase, imagenet=imagenet)
         self.loader = ImageLoader(self.root + '/images/')
 
         self.attrs, self.objs, self.pairs, \
@@ -180,9 +150,10 @@ class CompositionDataset(Dataset):
         if self.phase == 'train_on_seen':
             self.data = self.seen_data
         elif self.phase == 'train_on_all':
-            self.data = self.seen_data.extend(self.unseen_data)
+            self.data = self.seen_data
+            self.data.extend(self.unseen_data)
         elif self.phase == 'eval':
-            self.data = self.unseen_data_data
+            self.data = self.unseen_data
 
         self.train_pair_to_idx = dict(
             [(pair, idx) for idx, pair in enumerate(self.train_pairs)]
@@ -252,15 +223,7 @@ class CompositionDataset(Dataset):
         img = self.transform(img)
         caption = 'a photo of a {} {}'.format(attr,obj)
         text = self.tokenize(caption)
-
-        if self.phase == 'eval':
-            data = [
-                img, text, self.pair2idx[(attr, obj)]
-            ]
-        else:
-            data = [
-                img, text, self.train_pair_to_idx[(attr, obj)]
-            ]
+        data = img, text, self.pair2idx[(attr, obj)]
         return data
 
     def __len__(self):

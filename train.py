@@ -2,10 +2,11 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 import os
+import ipdb
 from omegaconf import OmegaConf
 import clip
 from data.datasets import CLIP_COCO_dataset,CompositionDataset
-from data.data_loaders import get_dataloader
+from data.data_loaders import get_dataloader,DATASET_PATHS
 from model.modules import get_model
 from utils.simple_tokenizer import SimpleTokenizer
 from utils.custom_schedulers import get_cosine_schedule_with_warmup, get_cosine_with_hard_restarts_schedule_with_warmup
@@ -43,6 +44,7 @@ def train(config, train_dataset, model):
     
     model = model.to(torch.device(config.device))
     model.zero_grad()
+    model.train()
 
     logger.info("***** Running training *****")
     logger.info("  Num examples = %d", len(train_dataset))
@@ -65,13 +67,15 @@ def train(config, train_dataset, model):
         start_epoch,global_step = load_checkpoint(config, model, optimizer)
     for epoch in range(start_epoch, config.num_train_epochs + 1):
         for step, batch in enumerate(train_dataloader):
-            if config.coco:
+            if config.dataset == "coco":
                 input_images, input_texts = batch
             else:
-                input_images, input_texts,labels = batch
+                input_images, input_texts,pairs_id = batch
+                pairs_id = pairs_id.view(-1,1)
+                pos_idx = torch.eq(pairs_id,pairs_id.t()).float()
+                
             input_images = input_images.to(torch.device(config.device))
             input_texts = input_texts.to(torch.device(config.device))
-            
             image_features, text_features = model(input_images, input_texts)
 
             # normalized features
@@ -85,13 +89,20 @@ def train(config, train_dataset, model):
             
             logits_per_image = logit_scale * image_features @ text_features.t()
             logits_per_text = logit_scale * text_features @ image_features.t()
-            if config.coco:
+            
+            if config.dataset == "coco":
                 labels = torch.arange(len(logits_per_image)).to(logits_per_image.device)
-
-            image_loss = F.cross_entropy(logits_per_image, labels)
-            text_loss  = F.cross_entropy(logits_per_text, labels)
-
+                image_loss = F.cross_entropy(logits_per_image.t(), labels)
+                text_loss  = F.cross_entropy(logits_per_text, labels)
+            else:  
+                labels = (pos_idx / pos_idx.sum(1,keepdim=True)).to(logits_per_image.device)
+#                 ipdb.set_trace()
+                image_loss = -torch.sum(F.log_softmax(logits_per_image,dim=1)*labels,dim=1).mean()
+                text_loss  =  -torch.sum(F.log_softmax(logits_per_text,dim=1)*labels,dim=1).mean()
+            
             loss = (image_loss + text_loss) / 2
+#             loss = image_loss                
+#             print(loss)
 
             if config.n_gpu > 1: 
                 loss = loss.mean() # mean() to average on multi-gpu parallel training
@@ -187,7 +198,8 @@ def main():
     parser.add_argument("--img-dir", default=None, type=str, required=False, help="path of directory containing training images")
     parser.add_argument("--train-type",default="train_on_seen",type=str,choices=["train_on_seen","train_on_all"],required=False,help="select train data")
     parser.add_argument("--experiment-name",default="adapter",type=str,choices=["train_from_scratch","adapter"],required=False,help="select train type")
-
+    parser.add_argument("--dataset",default='cgqa', help="name of the dataset", type=str)
+    parser.add_argument("--clip-model", help="clip model type", type=str, default="ViT-B/32")
     args = parser.parse_args()
 
     data_config = load_config_file(DATA_CONFIG_PATH)
@@ -201,16 +213,21 @@ def main():
     # merging cli arguments, if data path given in cli args use those
     if args.img_dir : 
         config.img_dir = args.img_dir
-
     if args.train_type:
         config.train_type = args.train_type
+    if args.clip_model:
+        config.MODEL.BACKBONE.NAME =  args.clip_model
+    if args.experiment_name:
+        config.experiment_name =  args.experiment_name
+    if args.dataset:
+        config.dataset =  args.dataset
         
     global logger
     # creating directories for saving checkpoints and logs
     mkdir(path=config.checkpoint_dir)
     mkdir(path=config.logs)
 
-    logger = setup_logger("CLIP_COCO_TRAIN", config.logs, 0, filename = "training_logs.txt")
+    logger = setup_logger(config.experiment_name+config.dataset, config.logs, 0, filename = "training_logs.txt")
 
     config.device = "cuda" if torch.cuda.is_available() else "cpu"
     config.n_gpu = torch.cuda.device_count() # config.n_gpu 
@@ -219,16 +236,19 @@ def main():
     # getting text tokenizer
     tokenizer = SimpleTokenizer()
     
-    model, _ = get_model(config)
+    model= get_model(config)
 
     logger.info(f"Training/evaluation parameters {train_config}")
-
+    
+    config.img_dir = DATASET_PATHS[config.dataset]
+    
     # getting dataset for training
-    if args.coco:
-        train_dataset = CLIP_COCO_dataset(args.train_type,config, tokenizer)
+    if config.dataset == "coco":
+        train_dataset = CLIP_COCO_dataset(config, tokenizer)
     else:
-        train_dataset = CompositionDataset(args.img_dir,args.train_type,tokenizer)
-    logger.info("train_type : '{}'".format(args.train_type))
+        train_dataset = CompositionDataset(config,text_tokenizer=tokenizer)
+    logger.info("train_type : '{}'".format(config.train_type))
+    logger.info("dataset : '{}'".format(config.dataset))
 
     # Now training
     global_step, avg_loss = train(config, train_dataset, model)
