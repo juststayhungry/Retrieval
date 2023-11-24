@@ -33,22 +33,15 @@ def get_similarities(image_features,text_features,batch_size=128):
     return all_sims
 
 def save_data(file_path,data):
-    text = 'recall @1   @5  @10分别为：\n'
+    text = 'recall @1   @5  @10：\n'
     for i in data:
         text += str(i)+'\t' 
     with open(file_path, 'w') as f:
         f.write(text)
 
-def evaluate(model,config,batch_size,k_list):
-    tokenizer = SimpleTokenizer()
+def evaluate(model,config,eval_loader,k_list):
+    logger.info("***** Running training *****")
     model.eval()
-    if config.dataset == "coco":
-        eval_dataset = CLIP_COCO_dataset(config,tokenizer)
-    else:
-        eval_dataset = CompositionDataset(config,tokenizer)
-    total = len(eval_dataset)
-    print("总共有{}个caption".format(total))
-    eval_loader = torch.utils.data.DataLoader(eval_dataset,batch_size=batch_size,shuffle=False)#
     image_features_list = []
     text_features_list = []
     pairs_id_list = []
@@ -73,7 +66,7 @@ def evaluate(model,config,batch_size,k_list):
               pairs_id_list.extend(pairs_id.to("cpu"))
       text_features = torch.cat(text_features_list, dim=0)
       image_features = torch.cat(image_features_list, dim=0)
-      similarities_i2t = get_similarities(image_features.float(), text_features.float(),batch_size)
+      similarities_i2t = get_similarities(image_features.float(), text_features.float(),batch_size=config.batch_size)
     similarities_t2i = similarities_i2t.T
     for k in k_list:
       correct_i2t =0
@@ -89,7 +82,7 @@ def evaluate(model,config,batch_size,k_list):
     # 计算recall@k并返回
       recall_i2t.append(float(correct_i2t) / float(total))
       recall_t2i.append(float(correct_t2i) / float(total))
-
+    
     return recall_i2t,recall_t2i
 
 
@@ -97,48 +90,70 @@ def evaluate(model,config,batch_size,k_list):
 if __name__ == '__main__':
     
     parser = argparse.ArgumentParser()
-#     parser.add_argument("--val-data", default=None, type=str, required=False, help="path of the data for evaluating")
-    parser.add_argument("--model",default="ViT-B/32",type=str,choices=["RN101","RN50","ViT-B/32"],required=False,help="select model type")
-    parser.add_argument("--batch-size",default="16",type=int,required=False,help="evaluate batchsize")
-#     parser.add_argument("--pretrained-pt-name",default="RN50",type=str,required=False,help="path/to/checkpoints/epoch_K.pt")
+    parser.add_argument("--dataset",default= 'cgqa',type=str, required=False, help="path of the data for evaluating")
+    parser.add_argument("--openai_clip_model",default="ViT-B/32",type=str,choices=["RN101","RN50","ViT-B/32"],required=False,help="select model type")
+    parser.add_argument("--batch-size",default=16,type=int,required=False,help="evaluate batchsize")
+    parser.add_argument("--pretrained-pt",required=True,type=str,help="path/to/checkpoints/epoch_K.pt")
+    parser.add_argument("--save-dir",type=str,required=False,help="dir/to/eval/result")
     args = parser.parse_args()
 
-    DATA_CONFIG_PATH = 'data/data_config.yaml'
-    TRAINER_CONFIG_PATH = 'trainer/train_config.yaml'
-    MODEL_CONFIG_PATH = 'model/model_config.yaml'
-
-    data_config = load_config_file(DATA_CONFIG_PATH)
-    train_config = load_config_file(TRAINER_CONFIG_PATH)
+    EVAL_CONFIG_PATH = 'eval_config.yaml'
+    config = load_config_file(EVAL_CONFIG_PATH)
     
-    mkdir(path=data_config.eval_result_dir)
-    train_config.device = "cuda" if torch.cuda.is_available() else "cpu"
-    config = OmegaConf.merge(train_config, data_config)
-    config.dataset = "coco"
+    config.train_type = 'eval'
+    if args.openai_clip_model:#open ai pretrained model's name
+        config.MODEL.BACKBONE.NAME =  args.openai_clip_model
+    if args.dataset:
+        config.dataset = args.dataset
+    if args.pretrained_pt:
+        config.pretrained_pt = args.pretrained_pt
+    if args.save_dir:
+        config.save_dir = args.save_dir
+    if args.batch_size:
+        config.batch_size = args.batch_size
+    config.device = "cuda" if torch.cuda.is_available() else "cpu"
     config.img_dir = DATASET_PATHS[config.dataset]
-    config.train_type ="eval"
-    #1.eval on OPEN AI pretrained CLIP
-    model_name = args.model#open ai pretrained model's name
-    openai_pretrained_model, _ = clip.load(model_name, device=config.device)
+    
+    eval_result_dir =  os.path.join(config.save_dir, config.dataset)
+    mkdir(path=eval_result_dir)
+    
+    tokenizer = SimpleTokenizer()
+    if config.dataset == "coco":
+        eval_dataset = CLIP_COCO_dataset(config,tokenizer)
+    else:
+        eval_dataset = CompositionDataset(config,tokenizer)
+    total = len(eval_dataset)
+    global logger
+    logger = setup_logger('Eval on {}'.format(config.dataset), eval_result_dir, 0, filename = "training_logs.txt")
+    logger.info("there are {} eval_datas in total".format(total))
+    eval_loader = torch.utils.data.DataLoader(eval_dataset,batch_size=config.batch_size,shuffle=False)#
+    logger.info(f"evaluation parameters {config}")
+    logger.info("dataset : '{}'".format(config.dataset))
+    
+    #load OPEN AI pretrained CLIP
+    openai_pretrained_model, _ = clip.load(config.MODEL.BACKBONE.NAME, device=config.device)
 
-    #2.eval on our trained CLIP
+    #2.load our trained CLIP
     model= get_model(config)
     # loading trained weights
-    #trained path
-    config.checkpoint_dir = 'adapter_coco_saved_checkpoints'
-    model_path =  os.path.join(config.checkpoint_dir, f'checkpoint_30_44370.pt')#add checkpoint's name
-    checkpoint = torch.load(model_path)
+    checkpoint = torch.load(config.pretrained_pt)#load from trained path
     state_dict = checkpoint['model_state_dict']
     model.load_state_dict(state_dict)
     model = model.to(config.device)
     
-    
     k_list = [1,5,10]#recall@k
-    recall1,_ = evaluate(openai_pretrained_model,config,args.batch_size, k_list)
-    result_path1 =  os.path.join(config.eval_result_dir, f'b1_result.txt')
-    save_data(result_path1,recall1)
     
-    recall2,_ = evaluate(model,config,args.batch_size, k_list)
-    result_path2 =  os.path.join(config.eval_result_dir, f'b2_result.txt')
+#     recall1,_ = evaluate(openai_pretrained_model,config,eval_loader,k_list)
+#     result_path1 =  os.path.join(eval_result_dir,f'b1_result.txt')
+#     logger.info("Openai_pretrained_clip {} recall @1   @5  @10: \n{}  {}  {}" .format(config.MODEL.BACKBONE.NAME,recall1[0],recall1[1],recall1[2]))
+#     save_data(result_path1,recall1)
+    
+    recall2,_ = evaluate(model,config,eval_loader,k_list)
+    logger.info("Our trained_clip {} recall @1   @5  @10:\n{}  {}  {}" .format(config.pretrained_pt,recall2[0],recall2[1],recall2[2])) 
+    result_path2 =  os.path.join(eval_result_dir,f'b22_result.txt')
     save_data(result_path2,recall2)
+    
+    logger.info("Evaling done")
+    
     
 

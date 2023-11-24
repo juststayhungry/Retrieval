@@ -1,7 +1,6 @@
 import torch
 from torch.utils.data import Dataset
 import os
-import ipdb
 from torchvision.transforms import (CenterCrop, Compose, InterpolationMode,
                                     Normalize, RandomHorizontalFlip,
                                     RandomPerspective, RandomRotation, Resize,
@@ -11,7 +10,7 @@ from torch.utils.data.dataloader import DataLoader
 from PIL import Image
 n_px =224
 
-def transform_image(phase="train", imagenet=False,coco=False):
+def transform_image(phase="train",coco=False):
     if coco:
         mean, std = (0.4225, 0.4012, 0.3659), (0.2681, 0.2635, 0.2763)
     else:
@@ -49,15 +48,16 @@ class CLIP_COCO_dataset(Dataset):
 
     def __init__(self,config, text_tokenizer,context_length=77, input_resolution=224):
         self.phase = config.train_type
-        self.image_path = config.img_dir
+        self.image_path = config.img_dir+ '/train2017'
+        print(config.img_dir)
         super(CLIP_COCO_dataset, self).__init__()
         if self.phase == 'train_on_seen':
-            self.data = self.read_txt(config.seen_imgid_caption_dir)
+            self.data = self.read_txt(config.img_dir + '/seen.txt')
         elif self.phase == 'train_on_all':
-            self.data = self.read_txt(config.seen_imgid_caption_dir)
-            self.data.extend(self.read_txt(config.unseen_imgid_caption_dir))
+            self.data = self.read_txt(config.img_dir + '/seen.txt')
+            self.data.extend(self.read_txt(config.img_dir + '/unseen_comp.txt'))
         elif self.phase == 'eval':#eval on unseen image
-            self.data = self.read_txt(config.unseen_imgid_caption_dir)
+            self.data = self.read_txt(config.img_dir + '/unseen_comp.txt')
         else:
             raise ValueError('Invalid phase')
         
@@ -126,7 +126,6 @@ class CompositionDataset(Dataset):
             config,
             text_tokenizer,
             split='compositional-split-natural',
-            imagenet=False
     ):
         self.phase = config.train_type
         self.root = config.img_dir
@@ -135,7 +134,7 @@ class CompositionDataset(Dataset):
         self.context_length = 77
 
 
-        self.transform = transform_image(self.phase, imagenet=imagenet)
+        self.transform = transform_image(self.phase)
         self.loader = ImageLoader(self.root + '/images/')
 
         self.attrs, self.objs, self.pairs, \

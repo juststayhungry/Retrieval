@@ -7,7 +7,7 @@ DATASET_PATHS = {
     "mit-states": os.path.join(DIR_PATH, "../data/mit-states"),
     "ut-zappos": os.path.join(DIR_PATH, "../data/ut-zappos"),
     "cgqa": os.path.join(DIR_PATH, "../cgqa"),
-    "coco": os.path.join(DIR_PATH, "../data/mscoco/train2017")
+    "coco": os.path.join(DIR_PATH, "mscoco")
 }
 
 def get_dataloader(config, dataset, is_train = True):

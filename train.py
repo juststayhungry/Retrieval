@@ -200,6 +200,7 @@ def main():
     parser.add_argument("--experiment-name",default="adapter",type=str,choices=["train_from_scratch","adapter"],required=False,help="select train type")
     parser.add_argument("--dataset",default='cgqa', help="name of the dataset", type=str)
     parser.add_argument("--clip-model", help="clip model type", type=str, default="ViT-B/32")
+    parser.add_argument("--batch-size", help="train batch-zise", type=int,required=False)
     args = parser.parse_args()
 
     data_config = load_config_file(DATA_CONFIG_PATH)
@@ -221,13 +222,15 @@ def main():
         config.experiment_name =  args.experiment_name
     if args.dataset:
         config.dataset =  args.dataset
+    if args.batch_size:
+        config.per_gpu_train_batch_size =  args.batch_size
         
     global logger
     # creating directories for saving checkpoints and logs
     mkdir(path=config.checkpoint_dir)
     mkdir(path=config.logs)
 
-    logger = setup_logger(config.experiment_name+config.dataset, config.logs, 0, filename = "training_logs.txt")
+    logger = setup_logger("{} on {} dataset".format(config.experiment_name,config.dataset), config.logs, 0, filename = "training_logs.txt")
 
     config.device = "cuda" if torch.cuda.is_available() else "cpu"
     config.n_gpu = torch.cuda.device_count() # config.n_gpu 
@@ -238,7 +241,7 @@ def main():
     
     model= get_model(config)
 
-    logger.info(f"Training/evaluation parameters {train_config}")
+    logger.info(f"Training parameters {train_config}")
     
     config.img_dir = DATASET_PATHS[config.dataset]
     

@@ -1,4 +1,4 @@
-img_dir : 'data/mscoco/train2017'
+img_dir :
 # '/content/train2017'
 
 seen_imgid_caption_dir : 'data/mscoco/seen.txt'

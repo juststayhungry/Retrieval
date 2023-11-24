@@ -1,5 +1,5 @@
-experiment_name: adapter #adapter or train_from_scratch
-dataset : #coco or cgqa
+experiment_name: adapter #adapter or 
+dataset : coco #coco or cgqa
 per_gpu_train_batch_size : 64 # 128 exeeds GPU memory
 per_gpu_eval_batch_size : 128 # not used in CLIP training
 n_gpu : 4
@@ -12,10 +12,10 @@ logging_steps : 50 #  log every this steps
 save_steps : 1000 # 1000 steps take 1 hour with 4 GTX1080 GPUs and batch size = 256 (64 per GPU)
 save_epochs : 5
 adapter_ratio: 0.3
-checkpoint_dir : adapter_saved_checkpoints
+checkpoint_dir : adapter_coco_train_on_all_saved_checkpoints
 resume:   #resume checkpoints path
-logs : adapter_logs
-train_type :     #"train_on_all" or  "train_on_seen"
+logs : adapter_coco_train_on_all_logs
+train_type : train_on_all    #"train_on_all" or  "train_on_seen"
 
 optimizer:
   params:

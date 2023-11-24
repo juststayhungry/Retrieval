@@ -1,0 +1,15 @@
+dataset : #coco or cgqa
+batch_size : 128 # load_batch_size
+train_type: "eval"
+
+MODEL:
+  BACKBONE:
+    NAME: "ViT-B/32"
+    
+pretrained_pt: #path/to/checkpoints/epoch_K.pt
+experiment_name: adapter #load the model from experiment
+save_dir: data/result  #dir/to/eval/result
+
+
+img_dir: 
+device:

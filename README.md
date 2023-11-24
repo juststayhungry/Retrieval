@@ -8,6 +8,7 @@ pip install -r requirements.txt
 ```
 
 ###download dataset
+#####download coco caption dataset
 
 ```
 mkdir data/mscoco
@@ -17,11 +18,21 @@ wget http://images.cocodataset.org/annotations/annotations_trainval2017.zip -O d
 unzip /dataset/annotations_trainval2017.zip
 ```
 
+#####download czsl's dataset
+follow https://github.com/BatsResearch/csp/blob/main/download_data.sh to install the czsl's datasets.
+
 ###Training
 To train a model, the command is simply:
 
 ```
-python train.py --img_dir "path of directory containing training images" --train_type 
+python train.py --train-type --dataset --batch-size
+```
+
+###Evaling
+To Evaluate a model, the command is simply:
+
+```
+python eval.py --pretrained-pt # path/to/trained model's checkpoints/epoch_K.pt--dataset --batch-size --openai_clip_model# the openai's clip model for eval[choices from "RN101","RN50","ViT-B/32"]
 ```
 
 ##Acknowledgment
